@@ -1,24 +1,27 @@
 'use client'
 import { useRef, useMemo, useState, useEffect } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Points, BufferGeometry, Float32BufferAttribute, Color, AdditiveBlending, TextureLoader, ShaderMaterial } from 'three'
+import { Points, Float32BufferAttribute, Color, AdditiveBlending } from 'three'
 import { calculateBrightness } from '@/lib/utils'
 import { useAppStore } from '@/lib/store'
+import ConstellationLines from './ConstellationLines'
+import GalaxyLabels from './GalaxyLabels'
 
 interface Star {
     id: string
     position: [number, number, number]
     isLocked: boolean
     likes: number
+    category?: string
 }
 
 export default function StarField() {
     const pointsRef = useRef<Points>(null)
     const [stars, setStars] = useState<Star[]>([])
-    const { selectStar } = useAppStore()
-    const { camera, raycaster } = useThree()
+    const { selectStar, constellationMode } = useAppStore()
+    const { raycaster } = useThree()
 
-    // Fetch stars on mount (Restored)
+    // Fetch stars on mount
     useEffect(() => {
         fetch('/api/messages')
             .then(res => res.json())
@@ -30,8 +33,25 @@ export default function StarField() {
 
     // Fix Interaction: Increase raycaster threshold for Points so they are clickable
     useEffect(() => {
-        raycaster.params.Points.threshold = 20; // Increased for easier clicking
+        raycaster.params.Points.threshold = 20
     }, [raycaster])
+
+    // Calculate star counts by category
+    const starCounts = useMemo(() => {
+        const counts: Record<string, number> = {
+            hope: 0,
+            regret: 0,
+            advice: 0,
+            dream: 0,
+            gratitude: 0
+        }
+        stars.forEach(star => {
+            if (star.category && counts[star.category] !== undefined) {
+                counts[star.category]++
+            }
+        })
+        return counts
+    }, [stars])
 
     // Create geometry and attributes
     const { positions, colors, sizes, ids } = useMemo(() => {
@@ -40,32 +60,27 @@ export default function StarField() {
         const sizes: number[] = []
         const ids: string[] = []
 
+        const categoryColors: Record<string, string> = {
+            hope: '#fbbf24',
+            regret: '#8b5cf6',
+            advice: '#3b82f6',
+            dream: '#ec4899',
+            gratitude: '#10b981'
+        }
+
         stars.forEach((star) => {
-            // Use actual 3D positions from Galaxy algorithm
             positions.push(star.position[0], star.position[1], star.position[2])
 
-            // Get category color or default
-            const categoryColors: Record<string, string> = {
-                hope: '#fbbf24',      // Amber
-                regret: '#8b5cf6',    // Purple
-                advice: '#3b82f6',    // Blue
-                dream: '#ec4899',     // Pink
-                gratitude: '#10b981'  // Green
-            }
-
-            const colorHex = (star as any).category
-                ? categoryColors[(star as any).category] || '#ffeebb'
+            const colorHex = star.category
+                ? categoryColors[star.category] || '#ffeebb'
                 : (star.isLocked ? '#88ccff' : '#ffeebb')
 
             const color = new Color(colorHex)
             const brightness = calculateBrightness(star.isLocked, star.likes)
-
-            // Apply brightness multiplier
             color.multiplyScalar(brightness * 1.5)
             colors.push(color.r, color.g, color.b)
 
-            // Locked stars smaller, unlocked bigger
-            sizes.push(star.isLocked ? 15.0 : 25.0)
+            sizes.push(star.isLocked ? 30.0 : 45.0)
             ids.push(star.id)
         })
 
@@ -77,19 +92,14 @@ export default function StarField() {
         }
     }, [stars])
 
+    const shaderRef = useRef<any>(null)
+
+    // Animate star pulsing
     useFrame((state) => {
-        // Optional: Twinkle effect or drift
+        if (shaderRef.current) {
+            shaderRef.current.uniforms.uTime.value = state.clock.elapsedTime
+        }
     })
-
-    // Raycasting logic for Points is tricky. 
-    // We'll stick to Points for visual but use invisible spheres for interaction if needed, 
-    // OR use local raycasting helper.
-    // For simplicity and performance with < 1000 stars, let's Stick to InstancedMesh but with a sprite texture.
-    // Wait, User asked for "glow". 
-    // Let's revert to InstancedMesh but use a PLANE geometry with a texture, always facing camera (Billboarding).
-
-    // Actually, Points are fastest and easiest for "Glow".
-    // But click detection on Points requires `threshold` adjustments.
 
     return (
         <>
@@ -101,36 +111,50 @@ export default function StarField() {
                     <bufferAttribute attach="attributes-size" args={[sizes.array, 1]} />
                 </bufferGeometry>
                 <shaderMaterial
+                    ref={shaderRef}
                     transparent
                     depthWrite={false}
                     blending={AdditiveBlending}
+                    uniforms={{
+                        uTime: { value: 0 }
+                    }}
                     vertexShader={`
+                        uniform float uTime;
                         attribute float size;
                         attribute vec3 color;
                         varying vec3 vColor;
                         void main() {
                             vColor = color;
                             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                            gl_PointSize = size * (300.0 / -mvPosition.z);
+                            
+                            // Subtle pulsing effect
+                            float pulse = 1.0 + sin(uTime * 0.5 + position.x * 0.1) * 0.1;
+                            gl_PointSize = size * pulse * (300.0 / -mvPosition.z);
                             gl_Position = projectionMatrix * mvPosition;
                         }
                     `}
                     fragmentShader={`
                         varying vec3 vColor;
                         void main() {
-                            // Soft circle glow
                             float r = distance(gl_PointCoord, vec2(0.5));
                             if (r > 0.5) discard;
+                            
+                            // Enhanced glow with soft falloff
                             float alpha = 1.0 - (r * 2.0);
-                            alpha = pow(alpha, 2.0);
-                            gl_FragColor = vec4(vColor, alpha);
+                            alpha = pow(alpha, 1.5);
+                            
+                            // Add subtle core brightness
+                            float core = 1.0 - smoothstep(0.0, 0.3, r);
+                            vec3 finalColor = vColor * (1.0 + core * 0.5);
+                            
+                            gl_FragColor = vec4(finalColor, alpha);
                         }
                     `}
                 />
             </points>
 
             {/* Invisible spheres for click detection */}
-            {stars.map((star, index) => (
+            {stars.map((star) => (
                 <mesh
                     key={star.id}
                     position={star.position}
@@ -145,6 +169,12 @@ export default function StarField() {
                     <meshBasicMaterial visible={false} />
                 </mesh>
             ))}
+
+            {/* Constellation Lines */}
+            <ConstellationLines stars={stars} visible={constellationMode} />
+
+            {/* Galaxy Labels */}
+            <GalaxyLabels starCounts={starCounts} />
         </>
     )
 }

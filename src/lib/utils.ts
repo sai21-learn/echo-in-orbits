@@ -1,49 +1,60 @@
 import { Vector3 } from 'three';
 
 /**
- * Galaxy Spiral Distribution Algorithm
- * Creates 5 distinct galaxy regions with spiral arms for message categories
+ * Spherical Planetarium Distribution
+ * Maps stars evenly onto a sphere surface using Fibonacci sphere algorithm
  */
 export function generateStarPosition(
     category: string,
     index: number
 ): { x: number; y: number; z: number } {
 
-    const GALAXY_CENTERS: Record<string, { x: number; y: number; z: number }> = {
-        hope: { x: 600, y: 400, z: 0 },   // Extreme separation
-        regret: { x: -600, y: 400, z: 0 },
-        advice: { x: 0, y: -400, z: 600 },
-        dream: { x: 600, y: -400, z: 0 },
-        gratitude: { x: -600, y: -400, z: 0 }
+    const SPHERE_RADIUS = 200 // Planetarium dome radius
+
+    // Define zones on sphere for each category using normalized coordinates
+    // Each category gets a section of the sphere
+    const CATEGORY_ZONES: Record<string, { phiStart: number; phiEnd: number; thetaStart: number; thetaEnd: number }> = {
+        hope: { phiStart: 0, phiEnd: 0.5, thetaStart: 0, thetaEnd: 0.5 },   // Top-front-right
+        regret: { phiStart: 0, phiEnd: 0.5, thetaStart: 0.5, thetaEnd: 1.0 },   // Top-back-left
+        advice: { phiStart: 0.5, phiEnd: 0.75, thetaStart: 0, thetaEnd: 1.0 },   // Middle band
+        dream: { phiStart: 0.75, phiEnd: 1.0, thetaStart: 0, thetaEnd: 0.5 },   // Bottom-front-right
+        gratitude: { phiStart: 0.75, phiEnd: 1.0, thetaStart: 0.5, thetaEnd: 1.0 }    // Bottom-back-left
     }
 
-    const center = GALAXY_CENTERS[category] || { x: 0, y: 0, z: 0 }
-    const GALAXY_RADIUS = 300 // Massive galaxies
-    const SPIRAL_TIGHTNESS = 1.2
-    const VERTICAL_COMPRESSION = 0.1 // Very flat
+    const zone = CATEGORY_ZONES[category] || { phiStart: 0, phiEnd: 1, thetaStart: 0, thetaEnd: 1 }
 
-    // Spiral calculation with high randomness
-    const angle = index * SPIRAL_TIGHTNESS + Math.random() * 2.0
-    const radius = 60 + Math.sqrt(index) * 25 // Wide inner clearing
-    const clampedRadius = Math.min(radius, GALAXY_RADIUS)
+    // Use Fibonacci spiral for even distribution within zone
+    const goldenRatio = (1 + Math.sqrt(5)) / 2
+    const goldenAngle = 2 * Math.PI / goldenRatio
 
-    // Position on spiral arm
-    const x = center.x + Math.cos(angle) * clampedRadius
-    const y = center.y + Math.sin(angle) * clampedRadius * VERTICAL_COMPRESSION
-    const z = center.z + (Math.random() - 0.5) * 80
+    // Normalize index to 0-1 range (assuming max ~20 stars per category)
+    const normalizedIndex = (index % 20) / 20
 
-    // Organic noise (±40 units for wide star fields)
-    const noise = {
-        x: (Math.random() - 0.5) * 40,
-        y: (Math.random() - 0.5) * 40,
-        z: (Math.random() - 0.5) * 40
-    }
+    // Calculate phi (polar angle, 0 to π)
+    const phiRange = zone.phiEnd - zone.phiStart
+    const phi = (zone.phiStart + normalizedIndex * phiRange) * Math.PI
 
-    return {
-        x: x + noise.x,
-        y: y + noise.y,
-        z: z + noise.z
-    }
+    // Calculate theta (azimuthal angle, 0 to 2π)  
+    const thetaRange = zone.thetaEnd - zone.thetaStart
+    const theta = (zone.thetaStart + ((index * goldenAngle) % (thetaRange * 2 * Math.PI))) * 2 * Math.PI
+
+    // Add small random variation for organic feel
+    const phiNoise = (Math.random() - 0.5) * 0.15
+    const thetaNoise = (Math.random() - 0.5) * 0.15
+
+    const finalPhi = Math.max(0.1, Math.min(Math.PI - 0.1, phi + phiNoise))
+    const finalTheta = theta + thetaNoise
+
+    // Convert spherical to Cartesian coordinates
+    // Standard spherical coordinate conversion:
+    // x = r * sin(phi) * cos(theta)
+    // y = r * cos(phi)  
+    // z = r * sin(phi) * sin(theta)
+    const x = SPHERE_RADIUS * Math.sin(finalPhi) * Math.cos(finalTheta)
+    const y = SPHERE_RADIUS * Math.cos(finalPhi)
+    const z = SPHERE_RADIUS * Math.sin(finalPhi) * Math.sin(finalTheta)
+
+    return { x, y, z }
 }
 
 /**
@@ -51,28 +62,27 @@ export function generateStarPosition(
  */
 export function getCategoryColor(category: string): string {
     const colors: Record<string, string> = {
-        hope: '#fbbf24',      // Amber
-        regret: '#8b5cf6',    // Purple
-        advice: '#3b82f6',    // Blue
-        dream: '#ec4899',     // Pink
-        gratitude: '#10b981'  // Green
-    }
-    return colors[category] || '#ffffff'
+        hope: '#fbbf24',
+        regret: '#8b5cf6',
+        advice: '#3b82f6',
+        dream: '#ec4899',
+        gratitude: '#10b981'
+    };
+    return colors[category] || '#ffeebb';
 }
 
 /**
- * Generate random star brightness
- */
-export function generateStarBrightness(): number {
-    return 0.6 + Math.random() * 0.8 // 0.6 to 1.4
-}
-
-/**
- * Calculates star brightness based on lock status and likes.
+ * Calculate star brightness based on locked status and likes
  */
 export function calculateBrightness(isLocked: boolean, likes: number): number {
-    const baseBrightness = isLocked ? 0.2 : 0.4;
-    const brightness = baseBrightness + likes * 0.05;
-    // Clamp between 0.2 and 2.0
-    return Math.min(Math.max(brightness, 0.2), 2.0);
+    const baseBrightness = isLocked ? 0.5 : 1.0;
+    const likesBoost = Math.min(likes * 0.1, 0.5);
+    return baseBrightness + likesBoost;
+}
+
+/**
+ * Generate random star brightness for seeding
+ */
+export function generateStarBrightness(): number {
+    return 0.7 + Math.random() * 0.3;
 }
