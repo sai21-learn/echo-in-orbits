@@ -6,9 +6,9 @@ import { useState } from 'react'
 const CATEGORIES = {
     hope: { label: 'Hope', emoji: '✨', color: '#fbbf24', x: 50, y: 40 },
     regret: { label: 'Regret', emoji: '💭', color: '#8b5cf6', x: -50, y: 40 },
-    advice: { label: 'Advice', emoji: '💡', color: '#3b82f6', x: 0, y: -40 },
-    dream: { label: 'Dream', emoji: '🌙', color: '#ec4899', x: 50, y: -40 },
-    gratitude: { label: 'Gratitude', emoji: '🙏', color: '#10b981', x: -50, y: -40 }
+    advice: { label: 'Advice', emoji: '💡', color: '#f63b3bff', x: 0, y: -40 },
+    dream: { label: 'Dream', emoji: '🌙', color: '#67d1e9ff', x: 50, y: -40 },
+    gratitude: { label: 'Gratitude', emoji: '🙏', color: '#b91010ff', x: -50, y: -40 }
 }
 
 export default function GalaxyMap() {
