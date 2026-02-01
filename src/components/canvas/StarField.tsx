@@ -24,11 +24,24 @@ export default function StarField() {
     // Fetch stars on mount
     useEffect(() => {
         fetch('/api/messages')
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`)
+                }
+                const contentType = res.headers.get('content-type')
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Response is not JSON')
+                }
+                return res.json()
+            })
             .then(data => {
                 if (Array.isArray(data)) setStars(data)
             })
-            .catch(err => console.error('Failed to fetch stars:', err))
+            .catch(err => {
+                console.error('Failed to fetch stars:', err)
+                // Set empty array on error to prevent app crash
+                setStars([])
+            })
     }, [])
 
     // Fix Interaction: Increase raycaster threshold for Points so they are clickable
